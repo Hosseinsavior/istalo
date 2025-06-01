@@ -8,13 +8,14 @@ const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const OWNER_ID = process.env.OWNER_ID;
 const ig = new IgApiClient();
 
-// تنظیم صریح BASE_URL
-const BASE_URL = process.env.VERCEL_URL || 'https://istalo.vercel.app';
+// تنظیم BASE_URL به دامنه اصلی
+const BASE_URL = 'https://istalo.vercel.app';
 
 async function initializeInstagramSession() {
   const username = process.env.INSTAGRAM_USERNAME;
   const savedSession = await getSession(username);
   if (savedSession) {
+    console.log('Session restored for:', username);
     ig.state.session = savedSession;
   }
 }
@@ -25,13 +26,13 @@ module.exports = async (req, res) => {
   try {
     if (req.method === 'POST') {
       await bot.handleUpdate(req.body);
-      res.status(200).send('OK');
+      res.status(200).send('Webhook received');
     } else {
       res.status(200).send('Webhook is running');
     }
   } catch (error) {
-    console.error('Webhook Error:', error);
-    res.status(500).send('Server Error');
+    console.error('Webhook error:', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -44,20 +45,19 @@ bot.start((ctx) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: '👨🏼‍💻 Developer', url: 'https://t.me/Savior_128' },
+              { text: '👨‍🚀 Developer', url: 'https://t.me/Savior_128' },
               { text: '🤖 Other Bots', url: 'https://t.me/Savior_128/122' },
             ],
             [
               { text: '🔗 Source Code', url: 'https://github.com/Savior_128/Instagram-Bot' },
-              { text: '🧩 Deploy Own Bot', url: 'https://heroku.com/deploy?template=https://github.com/Savior_128/Instagram-Bot' },
             ],
             [
-              { text: '👨🏼‍🦯 How To Use?', callback_data: 'help#subin' },
-              { text: '⚙️ Update Channel', url: 'https://t.me/Savior_128' },
+              { text: '📖 How To Use?', callback_data: 'help#subin' },
+              { text: '🔔 Update Channel', url: 'https://t.me/Savior_128' },
             ],
           ],
         },
-      }
+      },
     );
   }
   ctx.reply(
@@ -66,19 +66,19 @@ bot.start((ctx) => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: '👨🏼‍💻 Developer', url: 'https://t.me/Savior_128' },
+            { text: '👨‍🚀 Developer', url: 'https://t.me/Savior_128' },
             { text: '🤖 Other Bots', url: 'https://t.me/Savior_128/122' },
           ],
           [
             { text: '🔗 Source Code', url: 'https://github.com/Savior_128/Instagram-Bot' },
           ],
           [
-            { text: '👨🏼‍🦯 How To Use?', callback_data: 'help#subin' },
-            { text: '⚙️ Update Channel', url: 'https://t.me/Savior_128' },
+            { text: '📖 How to Use?', callback_data: 'help#subin' },
+            { text: '🔔 Updates Channel', url: 'https://t.me/Savior_128' },
           ],
         ],
       },
-    }
+    },
   );
 });
 
@@ -88,7 +88,7 @@ bot.command('login', async (ctx) => {
     return ctx.reply('This command is restricted to the owner.');
   }
   try {
-    console.log('Sending login request to:', `${BASE_URL}/api/login`);
+    console.log(`Sending login request to: ${BASE_URL}/api/login`);
     const response = await axios.post(`${BASE_URL}/api/login`, {
       ctx,
       action: 'login',
@@ -109,14 +109,15 @@ bot.command('login', async (ctx) => {
             password: process.env.INSTAGRAM_PASSWORD,
             twoFactorCode: otpCtx.message.text,
           });
-          otpCtx.reply(otpResponse.data.message);
+          ctx.reply(otpResponse.data.message);
         } catch (err) {
-          otpCtx.reply(`Error: ${err.message}`);
+          console.error('OTP error:', err.message);
+          ctx.reply(`Error: ${err.message}`);
         }
       });
     }
   } catch (error) {
-    console.error('Login Error:', error.message);
+    console.error('Login error:', error.message);
     ctx.reply(`Error: ${error.message}`);
   }
 });
@@ -127,13 +128,14 @@ bot.command('logout', async (ctx) => {
     return ctx.reply('This command is restricted to the owner.');
   }
   try {
+    console.log(`Sending logout request to: ${BASE_URL}/api/login`);
     const response = await axios.post(`${BASE_URL}/api/login`, {
       ctx,
       action: 'logout',
     });
     ctx.reply(response.data.message);
   } catch (error) {
-    console.error('Logout Error:', error.message);
+    console.error('Logout error:', error.message);
     ctx.reply(`Error: ${error.message}`);
   }
 });
@@ -145,7 +147,7 @@ bot.command('profile', async (ctx) => {
     return ctx.reply('Please provide a username, e.g., /profile username');
   }
   try {
-    console.log('Sending profile request to:', `${BASE_URL}/api/profile`);
+    console.log(`Sending profile request to: ${BASE_URL}/api/profile`);
     const response = await axios.post(`${BASE_URL}/api/profile`, {
       ctx,
       username,
@@ -157,36 +159,38 @@ bot.command('profile', async (ctx) => {
       ctx.reply(message);
     }
   } catch (error) {
-    console.error('Profile Error:', error.message);
+    console.error('Profile error:', error.message);
     ctx.reply(`Error: ${error.message}`);
   }
 });
 
-// مدیریت callback queries
+// مدیریت callback_query
 bot.on('callback_query', async (ctx) => {
   const [cmd, username] = ctx.callbackQuery.data.split('#');
   if (cmd === 'help') {
     ctx.editMessageText(
-      'Help: Use /login to authenticate, /profile <username> to view profile info, /download <type> <username> to download content.',
+      'Help: Use /login to authenticate, /profile <username> to view profile information, /download <type> <username> to download content.',
       {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: '👨🏼‍💻 Developer', url: 'https://t.me/Savior_128' },
-              { text: '🤖 Other Bots', url: 'https://t.me/Savior_128/122' },
-              { text: '⚙️ Update Channel', url: 'https://t.me/Savior_128' },
+              { text: '👨‍🚀 Developer', url: 'https://t.me/Savior_128' },
+              { text: '🤖 Other Bots', url: 'https://t.me/Savior/122' },
             ],
             [
-              { text: '🔗 Source Code', url: 'https://github.com/Savior_128/Instagram-Bot' },
-              { text: '🧩 Deploy Own Bot', url: 'https://heroku.com/deploy?template=https://github.com/Savior_128/Instagram-Bot' },
+              { text: '🔗 Source Code', url: 'https://github.com/Savior_128/122' },
+            ],
+            [
+              { text: '📖 How to Use?', callback_data: 'help#subin' },
+              { text: '🔔 Updates Channel', url: 'https://t.me/Savior_128' },
             ],
           ],
         },
-      }
+      },
     );
   } else if (['photos', 'videos', 'stories', 'igtv'].includes(cmd)) {
     try {
-      console.log('Sending download request to:', `${BASE_URL}/api/download`);
+      console.log(`Sending download request to: ${BASE_URL}/api/download`);
       const response = await axios.post(`${BASE_URL}/api/download`, {
         ctx,
         type: cmd,
@@ -203,7 +207,7 @@ bot.on('callback_query', async (ctx) => {
         ctx.editMessageText(message);
       }
     } catch (error) {
-      console.error('Download Error:', error.message);
+      console.error('Download error:', error.message);
       ctx.reply(`Error: ${error.message}`);
     }
   }
