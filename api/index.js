@@ -9,7 +9,7 @@ const OWNER_ID = process.env.OWNER_ID;
 const ig = new IgApiClient();
 
 // تنظیم BASE_URL به دامنه اصلی
-const BASE_URL = 'https://istalo-git-main-hosseinsaviors-projects.vercel.app/';
+const BASE_URL = 'https://istalo-git-main-hosseinsaviors-projects.vercel.app';
 
 async function initializeInstagramSession() {
   const username = process.env.INSTAGRAM_USERNAME;
