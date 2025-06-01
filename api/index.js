@@ -8,7 +8,7 @@ const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const OWNER_ID = process.env.OWNER_ID;
 const ig = new IgApiClient();
 
-// استفاده از URL پروژه
+// تنظیم صریح BASE_URL
 const BASE_URL = process.env.VERCEL_URL || 'https://istalo.vercel.app';
 
 async function initializeInstagramSession() {
@@ -88,6 +88,7 @@ bot.command('login', async (ctx) => {
     return ctx.reply('This command is restricted to the owner.');
   }
   try {
+    console.log('Sending login request to:', `${BASE_URL}/api/login`);
     const response = await axios.post(`${BASE_URL}/api/login`, {
       ctx,
       action: 'login',
@@ -115,6 +116,7 @@ bot.command('login', async (ctx) => {
       });
     }
   } catch (error) {
+    console.error('Login Error:', error.message);
     ctx.reply(`Error: ${error.message}`);
   }
 });
@@ -131,6 +133,7 @@ bot.command('logout', async (ctx) => {
     });
     ctx.reply(response.data.message);
   } catch (error) {
+    console.error('Logout Error:', error.message);
     ctx.reply(`Error: ${error.message}`);
   }
 });
@@ -142,6 +145,7 @@ bot.command('profile', async (ctx) => {
     return ctx.reply('Please provide a username, e.g., /profile username');
   }
   try {
+    console.log('Sending profile request to:', `${BASE_URL}/api/profile`);
     const response = await axios.post(`${BASE_URL}/api/profile`, {
       ctx,
       username,
@@ -153,6 +157,7 @@ bot.command('profile', async (ctx) => {
       ctx.reply(message);
     }
   } catch (error) {
+    console.error('Profile Error:', error.message);
     ctx.reply(`Error: ${error.message}`);
   }
 });
@@ -181,6 +186,7 @@ bot.on('callback_query', async (ctx) => {
     );
   } else if (['photos', 'videos', 'stories', 'igtv'].includes(cmd)) {
     try {
+      console.log('Sending download request to:', `${BASE_URL}/api/download`);
       const response = await axios.post(`${BASE_URL}/api/download`, {
         ctx,
         type: cmd,
@@ -197,6 +203,7 @@ bot.on('callback_query', async (ctx) => {
         ctx.editMessageText(message);
       }
     } catch (error) {
+      console.error('Download Error:', error.message);
       ctx.reply(`Error: ${error.message}`);
     }
   }
