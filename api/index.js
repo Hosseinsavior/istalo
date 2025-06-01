@@ -8,6 +8,9 @@ const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const OWNER_ID = process.env.OWNER_ID;
 const ig = new IgApiClient();
 
+// استفاده از URL پروژه
+const BASE_URL = process.env.VERCEL_URL || 'https://istalo.vercel.app';
+
 async function initializeInstagramSession() {
   const username = process.env.INSTAGRAM_USERNAME;
   const savedSession = await getSession(username);
@@ -27,7 +30,7 @@ module.exports = async (req, res) => {
       res.status(200).send('Webhook is running');
     }
   } catch (error) {
-    console.error(error);
+    console.error('Webhook Error:', error);
     res.status(500).send('Server Error');
   }
 };
@@ -85,7 +88,7 @@ bot.command('login', async (ctx) => {
     return ctx.reply('This command is restricted to the owner.');
   }
   try {
-    const response = await axios.post('https://your-vercel-app.vercel.app/api/login', {
+    const response = await axios.post(`${BASE_URL}/api/login`, {
       ctx,
       action: 'login',
       username: process.env.INSTAGRAM_USERNAME,
@@ -98,7 +101,7 @@ bot.command('login', async (ctx) => {
       ctx.reply(message, { reply_markup: { force_reply: true } });
       bot.on('text', async (otpCtx) => {
         try {
-          const otpResponse = await axios.post('https://your-vercel-app.vercel.app/api/login', {
+          const otpResponse = await axios.post(`${BASE_URL}/api/login`, {
             ctx: otpCtx,
             action: 'login',
             username: process.env.INSTAGRAM_USERNAME,
@@ -122,7 +125,7 @@ bot.command('logout', async (ctx) => {
     return ctx.reply('This command is restricted to the owner.');
   }
   try {
-    const response = await axios.post('https://your-vercel-app.vercel.app/api/login', {
+    const response = await axios.post(`${BASE_URL}/api/login`, {
       ctx,
       action: 'logout',
     });
@@ -139,7 +142,7 @@ bot.command('profile', async (ctx) => {
     return ctx.reply('Please provide a username, e.g., /profile username');
   }
   try {
-    const response = await axios.post('https://istalo.vercel.app/api/profile', {
+    const response = await axios.post(`${BASE_URL}/api/profile`, {
       ctx,
       username,
     });
@@ -178,7 +181,7 @@ bot.on('callback_query', async (ctx) => {
     );
   } else if (['photos', 'videos', 'stories', 'igtv'].includes(cmd)) {
     try {
-      const response = await axios.post('https://your-vercel-app.vercel.app/api/download', {
+      const response = await axios.post(`${BASE_URL}/api/download`, {
         ctx,
         type: cmd,
         username,
