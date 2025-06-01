@@ -72,7 +72,9 @@ async function logoutFromInstagram(username) {
 
 module.exports = async (req, res) => {
   try {
-    console.log('Login endpoint called:', {
+    console.log('Login endpoint accessed:', {
+      method: req.method,
+      url: req.url,
       body: req.body,
       headers: req.headers,
     });
