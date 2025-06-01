@@ -5,7 +5,11 @@ require('dotenv').config();
 const ig = new IgApiClient();
 
 module.exports = async (req, res) => {
-  const { username, ctx } = req.body;
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
+  const { username } = req.body;
 
   if (!username) {
     return res.status(400).json({ message: 'Please provide a username.' });
@@ -17,13 +21,17 @@ module.exports = async (req, res) => {
     if (!savedSession) {
       return res.status(401).json({ message: 'Not logged in. Please use /login first.' });
     }
-    ig.state.session = savedSession;
+
+    // استفاده از deserialize برای بارگذاری session
+    await ig.state.deserialize(savedSession);
+
+    // تنظیم device برای جلوگیری از خطاهای اینستاگرام
+    ig.state.generateDevice(process.env.INSTAGRAM_USERNAME);
 
     // دریافت اطلاعات پروفایل
-    ig.state.generateDevice(process.env.INSTAGRAM_USERNAME);
-    const userId = await ig.user.getIdByUsername(username);
-    const userInfo = await ig.user.info(userId);
-    const profilePic = await ig.user.profilePicture(userId);
+    const user = await ig.user.searchExact(username); // استفاده از searchExact برای نام کاربری
+    const userInfo = await ig.user.info(user.pk); // استفاده از user.pk به جای getIdByUsername
+    const profilePic = user.profile_pic_url; // مستقیماً از user.profile_pic_url استفاده کنید
 
     const caption = `
       🏷 **Name**: ${userInfo.full_name || 'N/A'}
@@ -39,10 +47,15 @@ module.exports = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      photo: profilePic.url,
+      photo: profilePic,
       caption,
+      message: `Profile fetched successfully for ${username}`,
     });
   } catch (error) {
-    return res.status(500).json({ message: `Error: ${error.message}` });
+    console.error('Profile error:', error.message, error.stack);
+    return res.status(500).json({
+      message: 'Failed to fetch profile',
+      details: error.message,
+    });
   }
 };

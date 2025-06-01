@@ -1,15 +1,15 @@
 const { Telegraf } = require('telegraf');
 const { IgApiClient } = require('instagram-private-api');
 const axios = require('axios');
-const { getSession } = require('../utils/mongo');
+const { getSession, saveSession } = require('../utils/mongo'); // فرض بر وجود این توابع
 require('dotenv').config();
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const OWNER_ID = process.env.OWNER_ID;
 const ig = new IgApiClient();
 
-// تنظیم BASE_URL به دامنه اصلی
-const BASE_URL = 'https://istalo.vercel.app';
+// تنظیم BASE_URL (برای درخواست‌های داخلی می‌توان از مسیر نسبی استفاده کرد)
+const BASE_URL = process.env.VERCEL_URL || 'https://istalo.vercel.app';
 
 async function initializeInstagramSession() {
   try {
@@ -19,7 +19,7 @@ async function initializeInstagramSession() {
     const savedSession = await getSession(username);
     if (savedSession) {
       console.log('Session restored for:', username);
-      ig.state.session = savedSession;
+      ig.state.deserialize(savedSession); // استفاده از deserialize برای session
     } else {
       console.log('No saved session found for:', username);
     }
@@ -30,6 +30,72 @@ async function initializeInstagramSession() {
 
 initializeInstagramSession();
 
+// Handler برای ورود به اینستاگرام
+async function handleInstagramLogin(req, res) {
+  try {
+    const { action, username, password, twoFactorCode } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    if (action === 'login') {
+      ig.state.generateDevice(username);
+      const loggedInUser = twoFactorCode
+        ? await ig.account.twoFactorLogin({ username, verificationCode: twoFactorCode })
+        : await ig.account.login(username, password);
+
+      // ذخیره session در MongoDB
+      const session = await ig.state.serialize();
+      await saveSession(username, session);
+
+      return res.status(200).json({
+        success: true,
+        message: `Logged in as ${username}`,
+        twoFactorRequired: !!twoFactorCode,
+      });
+    } else if (action === 'logout') {
+      await ig.account.logout();
+      await saveSession(username, null); // پاک کردن session
+      return res.status(200).json({ success: true, message: 'Logged out successfully' });
+    } else {
+      return res.status(400).json({ error: 'Invalid action' });
+    }
+  } catch (error) {
+    console.error('Login error:', error.message, error.stack);
+    return res.status(500).json({ error: 'Failed to login', details: error.message });
+  }
+}
+
+// Handler برای دریافت پروفایل
+async function handleInstagramProfile(req, res) {
+  try {
+    const { username } = req.body;
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    // اطمینان از وجود session
+    const savedSession = await getSession(process.env.INSTAGRAM_USERNAME);
+    if (!savedSession) {
+      return res.status(401).json({ error: 'Not logged in' });
+    }
+
+    ig.state.deserialize(savedSession);
+    const user = await ig.user.searchExact(username);
+
+    return res.status(200).json({
+      success: true,
+      photo: user.profile_pic_url,
+      caption: `${user.full_name} (@${user.username})\nBio: ${user.biography}`,
+      message: `Profile fetched for ${username}`,
+    });
+  } catch (error) {
+    console.error('Profile error:', error.message, error.stack);
+    return res.status(500).json({ error: 'Failed to fetch profile', details: error.message });
+  }
+}
+
+// Webhook و API handler
 module.exports = async (req, res) => {
   try {
     console.log('Received request:', {
@@ -38,7 +104,13 @@ module.exports = async (req, res) => {
       headers: req.headers,
       body: JSON.stringify(req.body, null, 2),
     });
-    if (req.method === 'POST') {
+
+    // مدیریت درخواست‌های API
+    if (req.url === '/api/login' && req.method === 'POST') {
+      return handleInstagramLogin(req, res);
+    } else if (req.url === '/api/profile' && req.method === 'POST') {
+      return handleInstagramProfile(req, res);
+    } else if (req.method === 'POST') {
       console.log('Handling Telegram update');
       await bot.handleUpdate(req.body);
       return res.status(200).send('Webhook received');
@@ -106,32 +178,24 @@ bot.start((ctx) => {
 });
 
 // دستور /login
+// دستور /login در api/index.js
 bot.command('login', async (ctx) => {
   if (ctx.from.id.toString() !== OWNER_ID) {
     console.log('Unauthorized login attempt by:', ctx.from.id);
     return ctx.reply('This command is restricted to the owner.');
   }
   try {
-    console.log(`Sending login request to: ${BASE_URL}/api/login`);
-    console.log('Request payload:', {
-      action: 'login',
-      username: process.env.INSTAGRAM_USERNAME,
-      password: process.env.INSTAGRAM_PASSWORD ? '****' : 'No password set',
-    });
-    const response = await axios.post(`${BASE_URL}/api/login`, {
-      ctx,
+    console.log(`Sending login request to: /api/login`);
+    const response = await axios.post('/api/login', {
       action: 'login',
       username: process.env.INSTAGRAM_USERNAME,
       password: process.env.INSTAGRAM_PASSWORD,
     }, {
       headers: { 'Content-Type': 'application/json' },
-      timeout: 10000, // 10 seconds timeout
+      timeout: 10000,
     });
-    console.log('Login response:', {
-      status: response.status,
-      data: response.data,
-    });
-    const { success, message, twoFactorRequired } = response.data;
+    console.log('Login response:', response.data);
+    const { success, message, twoFactorRequired, twoFactorIdentifier } = response.data;
     if (success) {
       return ctx.reply(message);
     } else if (twoFactorRequired) {
@@ -139,12 +203,12 @@ bot.command('login', async (ctx) => {
       bot.on('text', async (otpCtx) => {
         try {
           console.log('Sending 2FA login request with code:', otpCtx.message.text);
-          const otpResponse = await axios.post(`${BASE_URL}/api/login`, {
-            ctx: otpCtx,
+          const otpResponse = await axios.post('/api/login', {
             action: 'login',
             username: process.env.INSTAGRAM_USERNAME,
             password: process.env.INSTAGRAM_PASSWORD,
             twoFactorCode: otpCtx.message.text,
+            twoFactorIdentifier,
           });
           console.log('2FA response:', otpResponse.data);
           return ctx.reply(otpResponse.data.message);
@@ -157,13 +221,7 @@ bot.command('login', async (ctx) => {
   } catch (error) {
     console.error('Login error:', error.message, error.stack);
     if (error.response) {
-      console.error('Response details:', {
-        status: error.response.status,
-        data: error.response.data,
-        headers: error.response.headers,
-      });
-    } else {
-      console.error('No response received:', error.message);
+      console.error('Response details:', error.response.data);
     }
     return ctx.reply(`Error: ${error.message}`);
   }
@@ -176,37 +234,34 @@ bot.command('logout', async (ctx) => {
     return ctx.reply('This command is restricted to the owner.');
   }
   try {
-    console.log(`Sending logout request to: ${BASE_URL}/api/login`);
-    const response = await axios.post(`${BASE_URL}/api/login`, {
-      ctx,
+    console.log(`Sending logout request to: /api/login`);
+    const response = await axios.post('/api/login', {
       action: 'logout',
+      username: process.env.INSTAGRAM_USERNAME,
     });
     console.log('Logout response:', response.data);
     return ctx.reply(response.data.message);
   } catch (error) {
     console.error('Logout error:', error.message, error.stack);
     if (error.response) {
-      console.error('Response details:', {
-        status: error.response.status,
-        data: error.response.data,
-      });
+      console.error('Response details:', error.response.data);
     }
     return ctx.reply(`Error: ${error.message}`);
   }
 });
-
+// دستور /profile
 // دستور /profile
 bot.command('profile', async (ctx) => {
   const username = ctx.message.text.split(' ')[1];
   if (!username) {
-    return ctx.reply('Please provide a username, e.g., /profile username');
+    return ctx.reply('لطفاً یک نام کاربری وارد کنید، مثال: /profile username');
   }
   try {
-    console.log(`Sending profile request to: ${BASE_URL}/api/profile`);
+    console.log(`Sending profile request to: /api/profile`);
     console.log('Profile request payload:', { username });
-    const response = await axios.post(`${BASE_URL}/api/profile`, {
-      ctx,
-      username,
+    const response = await axios.post('/api/profile', { username }, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000,
     });
     console.log('Profile response:', response.data);
     const { success, photo, caption, message } = response.data;
@@ -218,12 +273,13 @@ bot.command('profile', async (ctx) => {
   } catch (error) {
     console.error('Profile error:', error.message, error.stack);
     if (error.response) {
-      console.error('Response details:', {
-        status: error.response.status,
-        data: error.response.data,
-      });
+      console.error('Response details:', error.response.data);
+      if (error.response.status === 404) {
+        return ctx.reply('خطای سرور: پروفایل یافت نشد. لطفاً بعداً تلاش کنید.');
+      }
+      return ctx.reply(`خطا: ${error.response.data.message || error.message}`);
     }
-    return ctx.reply(`Error: ${error.message}`);
+    return ctx.reply(`خطا: ${error.message}`);
   }
 });
 
@@ -254,10 +310,9 @@ bot.on('callback_query', async (ctx) => {
         }
       );
     } else if (['photos', 'videos', 'stories', 'igtv'].includes(cmd)) {
-      console.log(`Sending download request to: ${BASE_URL}/api/download`);
+      console.log(`Sending download request to: /api/download`);
       console.log('Download request payload:', { type: cmd, username });
       const response = await axios.post(`${BASE_URL}/api/download`, {
-        ctx,
         type: cmd,
         username,
       });
@@ -276,10 +331,7 @@ bot.on('callback_query', async (ctx) => {
   } catch (error) {
     console.error('Callback query error:', error.message, error.stack);
     if (error.response) {
-      console.error('Response details:', {
-        status: error.response.status,
-        data: error.response.data,
-      });
+      console.error('Response details:', error.response.data);
     }
     ctx.reply(`Error: ${error.message}`);
   }
