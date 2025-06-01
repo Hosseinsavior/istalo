@@ -139,7 +139,7 @@ bot.command('profile', async (ctx) => {
     return ctx.reply('Please provide a username, e.g., /profile username');
   }
   try {
-    const response = await axios.post('https://your-vercel-app.vercel.app/api/profile', {
+    const response = await axios.post('https://istalo.vercel.app/api/profile', {
       ctx,
       username,
     });
