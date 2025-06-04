@@ -1,0 +1,24 @@
+# از تصویر رسمی Node.js استفاده کن (نسخه 16 برای سازگاری با Parse Server 6.2.0)
+FROM node:16
+
+# تنظیم دایرکتوری کاری
+WORKDIR /usr/src/app
+
+# کپی کردن فایل‌های وابستگی
+COPY package*.json ./
+
+# نصب وابستگی‌ها
+RUN npm install
+
+# کپی کردن کد
+COPY main.js ./
+
+# تنظیم متغیرهای محیطی (می‌تونید از فایل env یا args استفاده کنید)
+ENV NODE_ENV=production
+ENV PARSE_SERVER_URL=https://parseapi.back4app.com
+ENV PARSE_APP_ID=1N3C7zwsgMb1ug4x20m5FgX07pyYiVkGj5DlIr97
+ENV PARSE_JAVASCRIPT_KEY=bQqyWXMFznbmsUQQte8yGe9ZFEFczUTTUEau4icA
+ENV TELEGRAM_BOT_TOKEN=6429865327:AAE-2pEt3tq24CLR7XxWMwXvlDpRxE59te8
+
+# اجرای برنامه
+CMD ["node", "main.js"]
